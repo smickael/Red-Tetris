@@ -7,6 +7,9 @@ import {
   SHAPES,
 } from "../utils/types";
 
+export const WIDTH = 10;
+export const HEIGHT = 20;
+
 export type BoardState = {
   board: BoardShape;
   dropRow: number;
@@ -21,19 +24,19 @@ export type BoardState = {
 };
 
 export type Action = {
-  type: "start" | "move" | "rotate" | "drop" | "gameover";
+  type: "start" | "move" | "drop" | "gameover";
 };
 
 export function getRandomBlock(): Block {
   const blocks = Object.values(Block);
   const randomIndex = Math.floor(Math.random() * blocks.length);
-  return blocks[randomIndex];
+  return blocks[randomIndex] as Block;
 }
 
-export function getEmptyBoard(): BoardShape {
-  return Array(20)
+export function getEmptyBoard(height = HEIGHT): BoardShape {
+  return Array(height)
     .fill(null)
-    .map(() => Array(10).fill(CellEmpty.Empty));
+    .map(() => Array(WIDTH).fill(CellEmpty.Empty));
 }
 
 function boardReducer(state: BoardState, action: Action): BoardState {
@@ -48,15 +51,8 @@ function boardReducer(state: BoardState, action: Action): BoardState {
         dropCol: 3,
         dropBlock: startBlock,
         dropShape: SHAPES[startBlock].shape,
-        // currentBlockPosition: { x: 0, y: 0 },
-        // currentBlockRotation: 0,
-        // nextBlock: Block.J,
-        // score: 0,
-        // isGameOver: false,
       };
     case "move":
-      return state;
-    case "rotate":
       return state;
     case "drop":
       _state.dropRow++;

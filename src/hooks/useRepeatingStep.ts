@@ -1,21 +1,22 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 export function useRepeatingStep(
   callback: () => void,
   step: number | null
 ): void {
-    const c
+  const cbRef = useRef(callback);
+
   useEffect(() => {
-    if (!step) {
+    cbRef.current = callback;
+  }, [callback]);
+
+  useEffect(() => {
+    if (!step || step <= 0) {
       return;
     }
 
-    const interval = setInterval(() => {
-      callback();
-    }, step);
+    const interval = setInterval(() => cbRef.current(), step);
 
-    return () => {
-      clearInterval(interval);
-    };
-  }, [callback, step]);
+    return () => clearInterval(interval);
+  }, [step]);
 }
