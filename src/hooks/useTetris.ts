@@ -32,7 +32,7 @@ export function useTetris() {
     dropShape
       .filter((row) => row.some((cell) => cell))
       .forEach((row: boolean[], rowIndex: number) => {
-        row.forEach((cell: boolean, colIndex:number) => {
+        row.forEach((cell: boolean, colIndex: number) => {
           if (cell) {
             renderBoard[dropRow + rowIndex][dropCol + colIndex] = dropBlock;
           }
@@ -40,17 +40,17 @@ export function useTetris() {
       });
   }
 
-  return {
-    board: renderBoard,
-    isPlaying,
-    startGame,
-    // setSpeed,
-  };
-
   useRepeatingStep(() => {
     if (!isPlaying) {
       return;
     }
     gameStep();
   }, speed);
+
+  return {
+    board: renderBoard,
+    isPlaying,
+    startGame,
+    // setSpeed,
+  };
 }
