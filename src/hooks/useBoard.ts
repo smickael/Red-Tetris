@@ -16,15 +16,12 @@ export type BoardState = {
   dropCol: number;
   dropBlock: Block;
   dropShape: BlockShape;
-//   currentBlockPosition: { x: number; y: number };
-//   currentBlockRotation: number;
-//   nextBlock: Block;
-//   score: number;
-//   isGameOver: boolean;
 };
 
 export type Action = {
-  type: "start" | "move" | "drop" | "gameover";
+  type: "start" | "move" | "drop" | "commit";
+  newBoard?: BoardShape;
+  newBlock?: Block;
 };
 
 export function getRandomBlock(): Block {
@@ -40,9 +37,9 @@ export function getEmptyBoard(height = HEIGHT): BoardShape {
 }
 
 function boardReducer(state: BoardState, action: Action): BoardState {
-    let _state = {...state};
+  let _state = { ...state };
 
-    switch (action.type) {
+  switch (action.type) {
     case "start":
       const startBlock: Block = getRandomBlock();
       return {
@@ -57,13 +54,24 @@ function boardReducer(state: BoardState, action: Action): BoardState {
     case "drop":
       _state.dropRow++;
       break;
-    case "gameover":
-      return state;
+    case "commit":
+      if (!action.newBoard) {
+        throw new Error("Missing newBoard in commit action");
+      }
+
+      const nextBlock = action.newBlock || getRandomBlock();
+      return {
+        board: action.newBoard,
+        dropRow: 0,
+        dropCol: 3,
+        dropBlock: nextBlock,
+        dropShape: SHAPES[nextBlock].shape,
+      };
     default:
       const unhandledAction: never = action.type;
       throw new Error(`Unhandled action: ${unhandledAction}`);
   }
-  
+
   return _state;
 }
 
@@ -86,4 +94,43 @@ export function useBoard(): [BoardState, Dispatch<Action>] {
     }
   );
   return [boardState, dispatchBoardState];
+}
+
+export function checkBlockCollision(
+  board: BoardShape,
+  currentShape: BlockShape,
+  row: number,
+  column: number
+): boolean {
+  if (!currentShape) {
+    console.error("Shape is undefined in checkBlockCollision");
+    return true;
+  }
+
+  for (let rowIndex = 0; rowIndex < currentShape.length; rowIndex++) {
+    for (
+      let colIndex = 0;
+      colIndex < currentShape[rowIndex].length;
+      colIndex++
+    ) {
+      if (currentShape[rowIndex][colIndex]) {
+        const boardRow = row + rowIndex;
+        const boardCol = column + colIndex;
+
+        if (
+          boardRow >= board.length ||
+          boardCol < 0 ||
+          boardCol >= board[0].length
+        ) {
+          return true;
+        }
+
+        if (boardRow >= 0 && board[boardRow][boardCol] !== CellEmpty.Empty) {
+          return true;
+        }
+      }
+    }
+  }
+  
+  return false;
 }
