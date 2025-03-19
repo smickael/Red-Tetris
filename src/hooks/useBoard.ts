@@ -7,6 +7,7 @@ import {
   SHAPES,
 } from "../utils/types";
 
+// Board dimensions
 export const WIDTH = 10;
 export const HEIGHT = 20;
 
@@ -27,18 +28,31 @@ export type Action = {
   row?: number;
 };
 
+/**
+ * Returns a random block type from the available tetromino shapes.
+ * Used to generate new pieces during
+ * gameplay in useTetris startGame function.
+ */
 export function getRandomBlock(): Block {
   const blocks = Object.values(Block);
   const randomIndex = Math.floor(Math.random() * blocks.length);
   return blocks[randomIndex] as Block;
 }
 
+/**
+ * Creates an empty game board with the specified HEIGT and WIDTH.
+ * Each cell is initialized with the Empty value from the CellEmpty enum.
+ */
 export function getEmptyBoard(height = HEIGHT): BoardShape {
   return Array(height)
     .fill(null)
     .map(() => Array(WIDTH).fill(CellEmpty.Empty));
 }
 
+/**
+ * Reducer function that handles all board state transitions.
+ * Takes the current state and an action, returns the new state.
+ */
 function boardReducer(state: BoardState, action: Action): BoardState {
   let _state = { ...state };
 
@@ -91,6 +105,10 @@ function boardReducer(state: BoardState, action: Action): BoardState {
   return _state;
 }
 
+/**
+ * Custom hook that manages the board state.
+ * Returns the current board state and a dispatch function to update it.
+ */
 export function useBoard(): [BoardState, Dispatch<Action>] {
   const [boardState, dispatchBoardState] = useReducer(
     boardReducer,
@@ -102,16 +120,19 @@ export function useBoard(): [BoardState, Dispatch<Action>] {
       dropShape: SHAPES.I.shape,
     },
     (emptyState) => {
-      const state = {
+      return {
         ...emptyState,
         board: getEmptyBoard(),
       };
-      return state;
     }
   );
   return [boardState, dispatchBoardState];
 }
 
+/**
+ * Checks if a block would collide with board borders or other blocks.
+ * Returns true if collision would happen, false if movement is valid.
+ */
 export function checkBlockCollision(
   board: BoardShape,
   currentShape: BlockShape,

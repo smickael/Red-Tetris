@@ -1,8 +1,15 @@
 import { useCallback, useState, useEffect } from "react";
 import { checkBlockCollision, getRandomBlock, useBoard } from "./useBoard";
 import { useRepeatingStep } from "./useRepeatingStep";
-import { Block, BlockShape, BoardShape } from "../utils/types";
+import {
+  Block,
+  BlockShape,
+  BoardShape,
+  CellEmpty,
+  SHAPES,
+} from "../utils/types";
 
+// Game speed constants in milliseconds
 enum Speed {
   Normal = 800,
   Fast = 400,
@@ -15,25 +22,109 @@ export function useTetris() {
   const [speed, setSpeed] = useState<Speed | null>(null);
   const [isCommit, setIsCommit] = useState(false);
   const [nextBlocks, setNextBlocks] = useState<Block[]>([]);
+  const [score, setScore] = useState(0);
 
   const [
     { board, dropRow, dropCol, dropBlock, dropShape },
     dispatchBoardState,
   ] = useBoard();
 
+  /**
+   * Start a new game by setting up the first blocks
+   * and starting the game loop
+   */
   const startGame = useCallback(() => {
     const firstBlocks = [getRandomBlock(), getRandomBlock(), getRandomBlock()];
     setNextBlocks(firstBlocks);
     setIsPlaying(true);
     setSpeed(Speed.Normal);
+    setScore(0);
     dispatchBoardState({ type: "start" });
   }, [dispatchBoardState]);
 
+  /**
+   * Ends the current game when it's game over
+   */
+  const endGame = useCallback(() => {
+    setIsPlaying(false);
+    setSpeed(null);
+    console.log("Game over. Score:", score);
+  }, [score]);
+
+  /**
+   * Checks if the board has any full lines and clears them
+   * Returns the number of lines cleared for the score
+   */
+  const clearFullLines = useCallback((gameBoard: BoardShape) => {
+    let linesCleared = 0;
+
+    for (let row = gameBoard.length - 1; row >= 0; row--) {
+      const isFull = gameBoard[row].every((cell) => cell !== CellEmpty.Empty);
+
+      if (isFull) {
+        linesCleared++;
+
+        //Move all rows above one row down
+        for (let y = row; y > 0; y--) {
+          gameBoard[y] = [...gameBoard[y - 1]];
+        }
+
+        // Empty the top row
+        gameBoard[0] = Array(gameBoard[0].length).fill(CellEmpty.Empty);
+
+        // Check the same row again
+        row++;
+      }
+    }
+
+    return linesCleared;
+  }, []);
+
+  /**
+   * Calculates the score based on the number of lines cleared
+   * and updates the score state
+   */
+  const calculateScore = useCallback((linesCleared: number): number => {
+    switch (linesCleared) {
+      case 1:
+        return 100;
+      case 2:
+        return 300;
+      case 3:
+        return 500;
+      case 4:
+        return 800;
+      default:
+        return 0;
+    }
+  }, []);
+
+  /**
+   * Checks if the game is over by checking if a new block
+   * would collide with the board at the starting position
+   */
+  const checkGameOver = useCallback(
+    (block: Block, shape: BlockShape): boolean => {
+      return checkBlockCollision(board, shape, 0, 3);
+    },
+    [board]
+  );
+
+  /**
+   * Commits the current block position to the board,
+   * and sets up the next block to be played
+   */
   const commitPosition = useCallback(() => {
     console.log("Committing position at row:", dropRow, "col:", dropCol);
 
     const newBoard = structuredClone(board);
     setShapeOnBoard(newBoard, dropBlock, dropShape, dropRow, dropCol);
+
+    const linesCleared = clearFullLines(newBoard);
+    if (linesCleared > 0) {
+      const scoreToAdd = calculateScore(linesCleared);
+      setScore((prevScore) => prevScore + scoreToAdd);
+    }
 
     const upcomingBlocks = structuredClone(nextBlocks);
     const newBlock = upcomingBlocks.pop();
@@ -46,6 +137,11 @@ export function useTetris() {
     setNextBlocks(upcomingBlocks);
 
     const nextBlockToUse = newBlock || getRandomBlock();
+
+    if (checkGameOver(nextBlockToUse, SHAPES[nextBlockToUse].shape)) {
+      endGame();
+      return;
+    }
 
     dispatchBoardState({
       type: "commit",
@@ -62,9 +158,21 @@ export function useTetris() {
     dropBlock,
     dispatchBoardState,
     nextBlocks,
+    clearFullLines,
+    calculateScore,
+    endGame,
+    checkGameOver,
   ]);
 
+  /**
+   * Handles the game step logic, moving the block down if possible,
+   * detecting collisions and committing the block to the board
+   */
   const gameStep = useCallback(() => {
+    if (!isPlaying) {
+      return;
+    }
+
     if (isCommit) {
       commitPosition();
       return;
@@ -95,8 +203,14 @@ export function useTetris() {
     dispatchBoardState,
     isCommit,
     commitPosition,
+    isPlaying,
   ]);
 
+  /**
+   * Places the block on the board at the specified position
+   * Renders the block on the board by setting the block type
+   * on the board at the specified position
+   */
   function setShapeOnBoard(
     board: BoardShape,
     dropBlock: Block,
@@ -109,6 +223,7 @@ export function useTetris() {
       return;
     }
 
+    // Iterate through each cell in the block shape
     for (let rowIndex = 0; rowIndex < dropShape.length; rowIndex++) {
       for (
         let colIndex = 0;
@@ -124,7 +239,6 @@ export function useTetris() {
             boardCol >= 0 &&
             boardCol < board[0].length
           ) {
-            // Placer le bloc sur le plateau
             board[boardRow][boardCol] = dropBlock;
           }
         }
@@ -132,14 +246,23 @@ export function useTetris() {
     }
   }
 
+  // ==== KEYBOARD CONTROLS FUNCTIONS ====
+
+  /**
+   * Moves the current block one column to the left if possible
+   * Checks for collisions to prevent moving the block off the board
+   */
   const moveLeft = useCallback(() => {
+    if (!isPlaying || isCommit) return;
+
     const willCollide = checkBlockCollision(
       board,
       dropShape,
       dropRow,
       dropCol - 1
     );
-    if (!willCollide && isPlaying && !isCommit) {
+
+    if (!willCollide) {
       dispatchBoardState({ type: "move", direction: -1 });
     }
   }, [
@@ -152,14 +275,21 @@ export function useTetris() {
     isCommit,
   ]);
 
+  /**
+   * Moves the current block one column to the right if possible
+   * Checks for collisions to prevent moving the block off the board
+   */
   const moveRight = useCallback(() => {
+    if (!isPlaying || isCommit) return;
+
     const willCollide = checkBlockCollision(
       board,
       dropShape,
       dropRow,
       dropCol + 1
     );
-    if (!willCollide && isPlaying && !isCommit) {
+
+    if (!willCollide) {
       dispatchBoardState({ type: "move", direction: 1 });
     }
   }, [
@@ -172,11 +302,16 @@ export function useTetris() {
     isCommit,
   ]);
 
+  /**
+   * Rotates the current block shape if possible
+   * Checks for collisions to prevent rotating the block off the board
+   */
   const rotate = useCallback(() => {
     if (!isPlaying || isCommit || !dropShape) return;
 
     const rows = dropShape.length;
     const cols = dropShape[0].length;
+
     const rotatedShape: BlockShape = Array(cols)
       .fill(null)
       .map(() => Array(rows).fill(false));
@@ -207,18 +342,30 @@ export function useTetris() {
     isCommit,
   ]);
 
+  /**
+   * Temporarily increases the falling speed when down arrow is pressed.
+   * Called on key down event.
+   */
   const moveDown = useCallback(() => {
     if (isPlaying && !isCommit) {
       setSpeed(Speed.Faster);
     }
   }, [isPlaying, isCommit]);
 
+  /**
+   * Restores normal falling speed when down arrow is released.
+   * Called on key up event.
+   */
   const releaseDown = useCallback(() => {
-    if (isPlaying) {
+    if (isPlaying && !isCommit) {
       setSpeed(Speed.Normal);
     }
-  }, [isPlaying]);
+  }, [isPlaying, isCommit]);
 
+  /**
+   * Makes a "hard drop" - directly moves the piece to the lowest
+   * possible position and commits it.
+   */
   const hardDrop = useCallback(() => {
     if (!isPlaying || isCommit) return;
 
@@ -242,10 +389,14 @@ export function useTetris() {
     isCommit,
   ]);
 
+  /**
+   * Sets up keyboard event listeners for game controls.
+   * Handles both keydown and keyup events for different actions.
+   */
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!isPlaying) return;
+    if (!isPlaying) return;
 
+    const handleKeyDown = (event: KeyboardEvent) => {
       switch (event.key) {
         case "ArrowLeft":
           moveLeft();
@@ -263,7 +414,7 @@ export function useTetris() {
           moveDown();
           event.preventDefault();
           break;
-        case " ": // Spacebar
+        case " ":
           hardDrop();
           event.preventDefault();
           break;
@@ -271,25 +422,27 @@ export function useTetris() {
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
-      if (!isPlaying) return;
-
-      switch (event.key) {
-        case "ArrowDown":
-          releaseDown();
-          event.preventDefault();
-          break;
+      if (event.key === "ArrowDown") {
+        releaseDown();
+        event.preventDefault();
       }
     };
 
+    // Event listeners
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
 
+    // Clean up event listeners on unmount or when game state changes
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
   }, [isPlaying, moveLeft, moveRight, rotate, moveDown, releaseDown, hardDrop]);
 
+  /**
+   * Game loop that runs the game step logic at regular intervals
+   * with gameStep function as the callback function
+   */
   useRepeatingStep(() => {
     if (!isPlaying) {
       return;
@@ -297,6 +450,9 @@ export function useTetris() {
     gameStep();
   }, speed);
 
+  /**
+   * Renders the game board with the current block position
+   */
   const renderBoard = structuredClone(board);
   if (isPlaying && dropShape) {
     setShapeOnBoard(renderBoard, dropBlock, dropShape, dropRow, dropCol);
@@ -306,6 +462,8 @@ export function useTetris() {
     board: renderBoard,
     isPlaying,
     startGame,
+    endGame,
+    score,
     nextBlock: nextBlocks.length > 0 ? nextBlocks[nextBlocks.length - 1] : null,
   };
 }
