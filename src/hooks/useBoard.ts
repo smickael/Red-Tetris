@@ -19,9 +19,12 @@ export type BoardState = {
 };
 
 export type Action = {
-  type: "start" | "move" | "drop" | "commit";
+  type: "start" | "move" | "drop" | "commit" | "rotate" | "hardDrop";
   newBoard?: BoardShape;
   newBlock?: Block;
+  direction?: number;
+  newShape?: BlockShape;
+  row?: number;
 };
 
 export function getRandomBlock(): Block {
@@ -50,9 +53,22 @@ function boardReducer(state: BoardState, action: Action): BoardState {
         dropShape: SHAPES[startBlock].shape,
       };
     case "move":
-      return state;
+      if (action.direction !== undefined) {
+        _state.dropCol += action.direction;
+      }
+      break;
     case "drop":
       _state.dropRow++;
+      break;
+    case "rotate":
+      if (action.newShape) {
+        _state.dropShape = action.newShape;
+      }
+      break;
+    case "hardDrop":
+      if (action.row !== undefined) {
+        _state.dropRow = action.row;
+      }
       break;
     case "commit":
       if (!action.newBoard) {
@@ -131,6 +147,6 @@ export function checkBlockCollision(
       }
     }
   }
-  
+
   return false;
 }

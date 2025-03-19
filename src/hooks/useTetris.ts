@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { checkBlockCollision, getRandomBlock, useBoard } from "./useBoard";
 import { useRepeatingStep } from "./useRepeatingStep";
 import { Block, BlockShape, BoardShape } from "../utils/types";
@@ -131,6 +131,164 @@ export function useTetris() {
       }
     }
   }
+
+  const moveLeft = useCallback(() => {
+    const willCollide = checkBlockCollision(
+      board,
+      dropShape,
+      dropRow,
+      dropCol - 1
+    );
+    if (!willCollide && isPlaying && !isCommit) {
+      dispatchBoardState({ type: "move", direction: -1 });
+    }
+  }, [
+    board,
+    dropShape,
+    dropRow,
+    dropCol,
+    dispatchBoardState,
+    isPlaying,
+    isCommit,
+  ]);
+
+  const moveRight = useCallback(() => {
+    const willCollide = checkBlockCollision(
+      board,
+      dropShape,
+      dropRow,
+      dropCol + 1
+    );
+    if (!willCollide && isPlaying && !isCommit) {
+      dispatchBoardState({ type: "move", direction: 1 });
+    }
+  }, [
+    board,
+    dropShape,
+    dropRow,
+    dropCol,
+    dispatchBoardState,
+    isPlaying,
+    isCommit,
+  ]);
+
+  const rotate = useCallback(() => {
+    if (!isPlaying || isCommit || !dropShape) return;
+
+    const rows = dropShape.length;
+    const cols = dropShape[0].length;
+    const rotatedShape: BlockShape = Array(cols)
+      .fill(null)
+      .map(() => Array(rows).fill(false));
+
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        rotatedShape[col][rows - 1 - row] = dropShape[row][col];
+      }
+    }
+
+    const willCollide = checkBlockCollision(
+      board,
+      rotatedShape,
+      dropRow,
+      dropCol
+    );
+
+    if (!willCollide) {
+      dispatchBoardState({ type: "rotate", newShape: rotatedShape });
+    }
+  }, [
+    board,
+    dropShape,
+    dropRow,
+    dropCol,
+    dispatchBoardState,
+    isPlaying,
+    isCommit,
+  ]);
+
+  const moveDown = useCallback(() => {
+    if (isPlaying && !isCommit) {
+      setSpeed(Speed.Faster);
+    }
+  }, [isPlaying, isCommit]);
+
+  const releaseDown = useCallback(() => {
+    if (isPlaying) {
+      setSpeed(Speed.Normal);
+    }
+  }, [isPlaying]);
+
+  const hardDrop = useCallback(() => {
+    if (!isPlaying || isCommit) return;
+
+    let newRow = dropRow;
+    let willCollide = false;
+
+    while (!willCollide) {
+      newRow++;
+      willCollide = checkBlockCollision(board, dropShape, newRow, dropCol);
+    }
+
+    dispatchBoardState({ type: "hardDrop", row: newRow - 1 });
+    setIsCommit(true);
+  }, [
+    board,
+    dropShape,
+    dropRow,
+    dropCol,
+    dispatchBoardState,
+    isPlaying,
+    isCommit,
+  ]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isPlaying) return;
+
+      switch (event.key) {
+        case "ArrowLeft":
+          moveLeft();
+          event.preventDefault();
+          break;
+        case "ArrowRight":
+          moveRight();
+          event.preventDefault();
+          break;
+        case "ArrowUp":
+          rotate();
+          event.preventDefault();
+          break;
+        case "ArrowDown":
+          moveDown();
+          event.preventDefault();
+          break;
+        case " ": // Spacebar
+          hardDrop();
+          event.preventDefault();
+          break;
+      }
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (!isPlaying) return;
+
+      switch (event.key) {
+        case "ArrowDown":
+          releaseDown();
+          event.preventDefault();
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, [isPlaying, moveLeft, moveRight, rotate, moveDown, releaseDown, hardDrop]);
 
   useRepeatingStep(() => {
     if (!isPlaying) {
