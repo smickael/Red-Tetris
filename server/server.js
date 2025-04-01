@@ -1,6 +1,8 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
+const TetrisGame = require("./tetris");
+const Player = require("./player");
 
 const app = express();
 const server = http.createServer(app);
@@ -12,6 +14,7 @@ const io = new Server(server, {
 });
 
 const rooms = {};
+const game = new TetrisGame();
 
 function emitRoomsList() {
   io.emit("roomsList", JSON.stringify(Object.values(rooms)));
@@ -22,8 +25,11 @@ io.on("connection", (socket) => {
   console.log("a user connected");
   console.log("Rooms: ", rooms);
 
+  game.addPlayer(socket.id);
+
   socket.on("disconnect", () => {
     console.log("user disconnected");
+    game.removePlayer(socket.id);
 
     // Vérifier dans quelle salle il était et le retirer
     for (const roomId in rooms) {
@@ -42,6 +48,20 @@ io.on("connection", (socket) => {
   // Handle game events here
   socket.on("startGame", () => {
     console.log("Game started");
+    const initialBlocks = game.startGameForPlayer(socket.id);
+
+    if (rooms[socket.id]) {
+      rooms[socket.id].players.forEach((playerId) => {
+        io.to(playerId).emit("gameStarted", initialBlocks);
+      });
+    } else {
+      socket.emit("gameStarted", initialBlocks);
+    }
+  });
+
+  socket.on("requestNewBlock", () => {
+    const newBlock = game.getRandomBlock();
+    socket.emit("newBlock", newBlock);
   });
 
   socket.on("movePiece", (direction) => {

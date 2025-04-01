@@ -38,7 +38,6 @@ export const SHAPES: ShapesType = {
       [false, false, false],
       [false, false, true],
       [true, true, true],
-      
     ],
   },
   L: {
@@ -75,4 +74,18 @@ export const SHAPES: ShapesType = {
       [false, true, true],
     ],
   },
+};
+
+// Game speed constants in milliseconds
+export enum Speed {
+  Normal = 800,
+  Fast = 400,
+  Faster = 200,
+  Slide = 100,
+}
+
+export type Room = {
+  id: string;
+  roomName: string;
+  players: string[];
 };

@@ -1,28 +1,16 @@
 import { useCallback, useState, useEffect } from "react";
-import { checkBlockCollision, getRandomBlock, useBoard } from "./useBoard";
+import { checkBlockCollision, useBoard } from "./useBoard";
 import { useRepeatingStep } from "./useRepeatingStep";
 import {
   Block,
   BlockShape,
   BoardShape,
   CellEmpty,
+  Room,
   SHAPES,
+  Speed,
 } from "../utils/types";
 import { useSocket } from "../useSocket";
-
-// Game speed constants in milliseconds
-enum Speed {
-  Normal = 800,
-  Fast = 400,
-  Faster = 200,
-  Slide = 100,
-}
-
-type Room = {
-  id: string;
-  roomName: string;
-  players: string[];
-};
 
 export function useTetris() {
   const socket = useSocket();
@@ -32,6 +20,7 @@ export function useTetris() {
   const [nextBlocks, setNextBlocks] = useState<Block[]>([]);
   const [score, setScore] = useState(0);
   const [roomsList, setRoomsList] = useState<Room[]>([]);
+  const [currentRoom, setCurrentRoom] = useState<string | null>(null);
 
   const [
     { board, dropRow, dropCol, dropBlock, dropShape },
@@ -39,35 +28,57 @@ export function useTetris() {
   ] = useBoard();
 
   useEffect(() => {
-    if (socket) {
-      socket.emit("getRooms");
+    if (!socket) return;
 
-      socket.on("pieceMoved", (newBoard: BoardShape) => {
-        // Update the board state based on the server's response
-        dispatchBoardState({ type: "commit", newBoard });
+    const handleStartedGame = (initialBlocks: Block[]) => {
+      setNextBlocks(initialBlocks);
+      setIsPlaying(true);
+      setSpeed(Speed.Normal);
+      setScore(0);
+      dispatchBoardState({
+        type: "start",
+        newBlock: initialBlocks[initialBlocks.length - 1],
       });
+    };
 
-      socket.on("gameStarted", (initialBlocks: Block[]) => {
-        setNextBlocks(initialBlocks);
-        setIsPlaying(true);
-        setSpeed(Speed.Normal);
-        setScore(0);
-        dispatchBoardState({ type: "start" });
-      });
+    const handleRoomsList = (rooms: string) => {
+      console.log("Received rooms list:", rooms);
+      setRoomsList(JSON.parse(rooms));
+    };
 
-      socket.on("roomsList", (rooms) => {
-        console.log("Received rooms list:", rooms);
-        const roomsList = JSON.parse(rooms);
-        setRoomsList(roomsList);
-        console.log("Rooms list:", roomsList);
+    const handlePieceMoved = (newBoard: BoardShape) => {
+      dispatchBoardState({ type: "commit", newBoard });
+    };
+
+    const handleNewBlock = (newBlock: Block) => {
+      setNextBlocks((prevBlocks) => {
+        const updatedBlocks = [...prevBlocks];
+        updatedBlocks.pop();
+        updatedBlocks.unshift(newBlock);
+        return updatedBlocks;
       });
-    }
+    };
+
+    socket.on("gameStarted", handleStartedGame);
+    socket.on("roomsList", handleRoomsList);
+    socket.on("pieceMoved", handlePieceMoved);
+    socket.on("newBlock", handleNewBlock);
+
+    socket.emit("getRooms");
+
+    return () => {
+      socket.off("gameStarted", handleStartedGame);
+      socket.off("roomsList", handleRoomsList);
+      socket.off("pieceMoved", handlePieceMoved);
+      socket.off("newBlock", handleNewBlock);
+    };
   }, [socket, dispatchBoardState]);
 
   const createRoom = useCallback(
     (roomName: string) => {
       if (socket) {
         socket.emit("createRoom", roomName);
+        setCurrentRoom(socket.id ?? null);
       }
     },
     [socket]
@@ -77,6 +88,7 @@ export function useTetris() {
     (room: Room) => {
       if (socket) {
         socket.emit("joinRoom", room.id);
+        setCurrentRoom(room.id);
       }
     },
     [socket]
@@ -87,17 +99,27 @@ export function useTetris() {
    * and starting the game loop
    */
   const startGame = useCallback(() => {
-    if (socket) {
-      socket.emit("startGame");
+    if (!socket) {
+      // Mode solo sans socket (fallback)
+      const fallbackBlocks = [Block.I, Block.J, Block.L];
+      setNextBlocks(fallbackBlocks);
+      setIsPlaying(true);
+      setSpeed(Speed.Normal);
+      setScore(0);
+      dispatchBoardState({
+        type: "start",
+        newBlock: fallbackBlocks[fallbackBlocks.length - 1],
+      });
+      return;
     }
 
-    const firstBlocks = [getRandomBlock(), getRandomBlock(), getRandomBlock()];
-    setNextBlocks(firstBlocks);
-    setIsPlaying(true);
-    setSpeed(Speed.Normal);
-    setScore(0);
-    dispatchBoardState({ type: "start" });
-  }, [dispatchBoardState, socket]);
+    // Avec socket (mode solo ou multi)
+    socket.emit("startGame");
+
+    // Reset some states while waiting for server response
+    setIsPlaying(false);
+    setSpeed(null);
+  }, [socket, dispatchBoardState]);
 
   /**
    * Ends the current game when it's game over
@@ -187,13 +209,13 @@ export function useTetris() {
     const newBlock = upcomingBlocks.pop();
 
     if (upcomingBlocks.length < 3) {
-      upcomingBlocks.unshift(getRandomBlock());
+      socket?.emit("requestNewBlock");
     }
 
     setSpeed(Speed.Normal);
-    setNextBlocks(upcomingBlocks);
+    // setNextBlocks(upcomingBlocks);
 
-    const nextBlockToUse = newBlock || getRandomBlock();
+    const nextBlockToUse = newBlock || Block.I;
 
     if (checkGameOver(nextBlockToUse, SHAPES[nextBlockToUse].shape)) {
       endGame();
@@ -219,6 +241,7 @@ export function useTetris() {
     calculateScore,
     endGame,
     checkGameOver,
+    socket,
   ]);
 
   /**
@@ -249,9 +272,6 @@ export function useTetris() {
     } else {
       dispatchBoardState({ type: "drop" });
     }
-
-    console.log("Drop position:", dropRow, dropCol);
-    console.log("Will collide:", willCollide);
   }, [
     board,
     dropShape,
@@ -531,6 +551,7 @@ export function useTetris() {
     createRoom,
     roomsList,
     joinRoom,
-    socket
+    socket,
+    currentRoom,
   };
 }

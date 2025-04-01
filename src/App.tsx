@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import "./App.css";
 import { Board } from "./components/Board";
 import { useTetris } from "./hooks/useTetris";
@@ -8,6 +8,7 @@ import Input from "./components/Input";
 function App() {
   const [roomName, setRoomName] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const {
     board,
     startGame,
@@ -15,8 +16,18 @@ function App() {
     createRoom,
     roomsList,
     joinRoom,
+    currentRoom,
     socket,
   } = useTetris();
+
+  const handleStartGame = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      await startGame();
+    } finally {
+      setIsLoading(false);
+    }
+  }, [startGame]);
 
   const handleCreateRoom = (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,61 +60,65 @@ function App() {
     <>
       <Board currentBoard={board} />
       <div className="controls">
-        <Button onClick={startGame} disabled={isPlaying}>
-          Start Game
+        <Button onClick={handleStartGame} disabled={isPlaying}>
+          {currentRoom ? "Start Multiplayer" : "Start Singleplayer"}
         </Button>
       </div>
 
       {/* Search input for rooms */}
-      <div className="mb-4">
-        <Input
-          label="Search rooms"
-          variant="outline"
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Type to search rooms..."
-        />
-      </div>
+      {!currentRoom && (
+        <>
+          <div className="mb-4">
+            <Input
+              label="Search rooms"
+              variant="outline"
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Type to search rooms..."
+            />
+          </div>
 
-      {/* Rooms list */}
-      <div className="space-y-2">
-        <p>Available rooms:</p>
-        {filteredRooms.length > 0 ? (
-          filteredRooms.map((room) => (
-            <Button
-              key={room.id}
-              onClick={() => joinRoom(room)}
-              disabled={room.id === socket?.id}
-              showPing={room.id === socket?.id}
-              className="relative"
-            >
-              {highlightMatch(room.roomName, searchQuery)}
+          <div className="space-y-2">
+            <p>Available rooms:</p>
+            {filteredRooms.length > 0 ? (
+              filteredRooms.map((room) => (
+                <Button
+                  key={room.id}
+                  onClick={() => joinRoom(room)}
+                  disabled={room.id === socket?.id}
+                  showPing={room.id === socket?.id}
+                  className="relative"
+                >
+                  {highlightMatch(room.roomName, searchQuery)}
+                </Button>
+              ))
+            ) : (
+              <p className="text-davysGrey">
+                No rooms found matching your search
+              </p>
+            )}
+          </div>
+
+          <form
+            onSubmit={handleCreateRoom}
+            className="flex w-full justify-between items-end gap-2 mt-4"
+          >
+            <Input
+              label="Create a room"
+              variant="primary"
+              type="text"
+              name="room"
+              value={roomName}
+              onChange={(e) => setRoomName(e.target.value)}
+              placeholder="Enter room name"
+            />
+            <Button type="submit" className="w-1/2">
+              Create room
             </Button>
-          ))
-        ) : (
-          <p className="text-davysGrey">No rooms found matching your search</p>
-        )}
-      </div>
-
-      {/* Create room form */}
-      <form
-        onSubmit={handleCreateRoom}
-        className="flex w-full justify-between items-end gap-2 mt-4"
-      >
-        <Input
-          label="Create a room"
-          variant="primary"
-          type="text"
-          name="room"
-          value={roomName}
-          onChange={(e) => setRoomName(e.target.value)}
-          placeholder="Enter room name"
-        />
-        <Button type="submit" className="w-1/2">
-          Create room
-        </Button>
-      </form>
+          </form>
+        </>
+      )}
     </>
   );
 }

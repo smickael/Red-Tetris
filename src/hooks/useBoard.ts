@@ -29,18 +29,6 @@ export type Action = {
 };
 
 /**
- * Returns a random block type from the available tetromino shapes.
- * Used to generate new pieces during
- * gameplay in useTetris startGame function.
- */
-export function getRandomBlock(): Block {
-  console.log("from client side")
-  const blocks = Object.values(Block);
-  const randomIndex = Math.floor(Math.random() * blocks.length);
-  return blocks[randomIndex] as Block;
-}
-
-/**
  * Creates an empty game board with the specified HEIGT and WIDTH.
  * Each cell is initialized with the Empty value from the CellEmpty enum.
  */
@@ -59,13 +47,12 @@ function boardReducer(state: BoardState, action: Action): BoardState {
 
   switch (action.type) {
     case "start":
-      const startBlock: Block = getRandomBlock();
       return {
         board: getEmptyBoard(),
         dropRow: 0,
         dropCol: 3,
-        dropBlock: startBlock,
-        dropShape: SHAPES[startBlock].shape,
+        dropBlock: action.newBlock || Block.I,
+        dropShape: SHAPES[action.newBlock || Block.I].shape,
       };
     case "move":
       if (action.direction !== undefined) {
@@ -90,7 +77,7 @@ function boardReducer(state: BoardState, action: Action): BoardState {
         throw new Error("Missing newBoard in commit action");
       }
 
-      const nextBlock = action.newBlock || getRandomBlock();
+      const nextBlock = action.newBlock || Block.I;
       return {
         board: action.newBoard,
         dropRow: 0,
@@ -120,12 +107,10 @@ export function useBoard(): [BoardState, Dispatch<Action>] {
       dropBlock: Block.I,
       dropShape: SHAPES.I.shape,
     },
-    (emptyState) => {
-      return {
-        ...emptyState,
-        board: getEmptyBoard(),
-      };
-    }
+    (emptyState) => ({
+      ...emptyState,
+      board: getEmptyBoard(),
+    })
   );
   return [boardState, dispatchBoardState];
 }
