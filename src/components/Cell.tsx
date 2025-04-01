@@ -6,6 +6,6 @@ interface Props {
 
 export function Cell({ type }: Props) {
   return (
-    <div className={`w-5 aspect-square border border-gray-500  cell-${type}`} />
+    <div className={`w-10 rounded-md aspect-square border border-lightDavysGrey  cell-${type}`} />
   );
 }

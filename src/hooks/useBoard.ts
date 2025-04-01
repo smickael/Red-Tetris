@@ -34,6 +34,7 @@ export type Action = {
  * gameplay in useTetris startGame function.
  */
 export function getRandomBlock(): Block {
+  console.log("from client side")
   const blocks = Object.values(Block);
   const randomIndex = Math.floor(Math.random() * blocks.length);
   return blocks[randomIndex] as Block;
