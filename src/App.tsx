@@ -8,30 +8,28 @@ import Input from "./components/Input";
 function App() {
   const [roomName, setRoomName] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  // removed unused isLoading state
   const {
     board,
     startGame,
     isPlaying,
     createRoom,
     roomsList,
-    joinRoom,
+  joinRoom,
+  leaveRoom,
     currentRoom,
     socket,
+  currentRoomPlayers,
   } = useTetris();
 
   const handleStartGame = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      await startGame();
-    } finally {
-      setIsLoading(false);
-    }
+    await startGame();
   }, [startGame]);
 
   const handleCreateRoom = (e: React.FormEvent) => {
     e.preventDefault();
-    createRoom(roomName);
+  if (!socket) return;
+  createRoom(roomName);
     setRoomName("");
   };
 
@@ -65,8 +63,8 @@ function App() {
         </Button>
       </div>
 
-      {/* Search input for rooms */}
-      {!currentRoom && (
+  {/* Search input for rooms */}
+  {!currentRoom && (
         <>
           <div className="mb-4">
             <Input
@@ -82,11 +80,11 @@ function App() {
           <div className="space-y-2">
             <p>Available rooms:</p>
             {filteredRooms.length > 0 ? (
-              filteredRooms.map((room) => (
+        filteredRooms.map((room) => (
                 <Button
                   key={room.id}
-                  onClick={() => joinRoom(room)}
-                  disabled={room.id === socket?.id}
+                  onClick={() => socket && joinRoom(room)}
+                  disabled={!socket}
                   showPing={room.id === socket?.id}
                   className="relative"
                 >
@@ -118,6 +116,23 @@ function App() {
             </Button>
           </form>
         </>
+      )}
+
+      {currentRoom && (
+        <div className="mt-4 flex flex-col gap-2 items-center">
+          <div className="text-davysGrey">Room: {currentRoom}</div>
+          <div className="text-davysGrey">
+            Players ({currentRoomPlayers?.length || 0}):
+            {" "}
+            {currentRoomPlayers?.map((id) => id.slice(0, 5)).join(", ")}
+          </div>
+          <Button
+            onClick={leaveRoom}
+            variant="outline"
+          >
+            Leave room
+          </Button>
+        </div>
       )}
     </>
   );

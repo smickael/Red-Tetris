@@ -75,3 +75,15 @@
 .cell-Z {
   background-color: red;
 }
+
+/* Special garbage cell (indestructible) */
+.cell-Garbage {
+  background: repeating-linear-gradient(
+    45deg,
+    #555,
+    #555 6px,
+    #666 6px,
+    #666 12px
+  );
+  border-color: #444;
+}

@@ -43,10 +43,10 @@ export function getEmptyBoard(height = HEIGHT): BoardShape {
  * Takes the current state and an action, returns the new state.
  */
 function boardReducer(state: BoardState, action: Action): BoardState {
-  let _state = { ...state };
+  const _state = { ...state };
 
   switch (action.type) {
-    case "start":
+    case "start": {
       return {
         board: getEmptyBoard(),
         dropRow: 0,
@@ -54,6 +54,7 @@ function boardReducer(state: BoardState, action: Action): BoardState {
         dropBlock: action.newBlock || Block.I,
         dropShape: SHAPES[action.newBlock || Block.I].shape,
       };
+    }
     case "move":
       if (action.direction !== undefined) {
         _state.dropCol += action.direction;
@@ -72,7 +73,7 @@ function boardReducer(state: BoardState, action: Action): BoardState {
         _state.dropRow = action.row;
       }
       break;
-    case "commit":
+    case "commit": {
       if (!action.newBoard) {
         throw new Error("Missing newBoard in commit action");
       }
@@ -85,9 +86,10 @@ function boardReducer(state: BoardState, action: Action): BoardState {
         dropBlock: nextBlock,
         dropShape: SHAPES[nextBlock].shape,
       };
-    default:
-      const unhandledAction: never = action.type;
-      throw new Error(`Unhandled action: ${unhandledAction}`);
+    }
+    default: {
+      throw new Error(`Unhandled action: ${action.type as never}`);
+    }
   }
 
   return _state;

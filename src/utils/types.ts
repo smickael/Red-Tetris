@@ -15,8 +15,14 @@ export enum CellEmpty {
 }
 
 export type CellOptions = Block | CellEmpty;
+// Optional: add a special cell for indestructible garbage (penalty)
+export enum SpecialCell {
+  Garbage = "Garbage",
+}
 
-export type BoardShape = CellOptions[][];
+export type ExtendedCellOptions = CellOptions | SpecialCell;
+
+export type BoardShape = ExtendedCellOptions[][];
 
 type ShapesType = {
   [key in Block]: {
@@ -88,4 +94,6 @@ export type Room = {
   id: string;
   roomName: string;
   players: string[];
+  host?: string;
+  started?: boolean;
 };

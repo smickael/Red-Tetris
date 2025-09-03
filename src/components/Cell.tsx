@@ -1,7 +1,7 @@
-import { CellOptions } from "../utils/types";
+import { ExtendedCellOptions } from "../utils/types";
 
 interface Props {
-  type: CellOptions;
+  type: ExtendedCellOptions;
 }
 
 export function Cell({ type }: Props) {
