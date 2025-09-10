@@ -1,11 +1,14 @@
 import { useCallback, useState } from "react";
+import { SocketProvider } from "./components/SocketProvider";
 import "./App.css";
 import { Board } from "./components/Board";
 import { useTetris } from "./hooks/useTetris";
+import { OpponentSpectres } from "./components/OpponentSpectres";
+import { NextPieces } from "./components/NextPieces";
 import Button from "./components/Button";
 import Input from "./components/Input";
 
-function App() {
+function AppContent() {
   const [roomName, setRoomName] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   // removed unused isLoading state
@@ -15,12 +18,26 @@ function App() {
     isPlaying,
     createRoom,
     roomsList,
-  joinRoom,
-  leaveRoom,
+    joinRoom,
+    leaveRoom,
     currentRoom,
     socket,
-  currentRoomPlayers,
+    currentRoomPlayers,
+    opponentSpectres,
+    nextBlocksPreview,
+  penaltyFlash,
+    winner,
   } = useTetris();
+
+  // État pour afficher le fallback offline
+  const [showOffline, setShowOffline] = useState(false);
+  // Détection de la perte de connexion socket
+  if (!socket && !showOffline && isPlaying) {
+    setShowOffline(true);
+  }
+  const handleReconnect = () => {
+    window.location.reload();
+  };
 
   const handleStartGame = useCallback(async () => {
     await startGame();
@@ -56,7 +73,35 @@ function App() {
 
   return (
     <>
-      <Board currentBoard={board} />
+      {showOffline && (
+        <div className="fixed inset-0 bg-vampireBlack bg-opacity-80 z-50 flex flex-col items-center justify-center gap-6">
+          <div className="bg-white rounded-xl shadow-lg p-8 flex flex-col items-center gap-4">
+            <span className="text-lg font-bold text-red-600">Connexion au serveur perdue</span>
+            <span className="text-davysGrey">Vous êtes en mode solo local. Certaines fonctionnalités multijoueur sont désactivées.</span>
+            <Button onClick={handleReconnect} className="bg-davysGrey text-white">Recharger et tenter de se reconnecter</Button>
+          </div>
+        </div>
+      )}
+      {winner && (
+        <div className="fixed inset-0 bg-vampireBlack bg-opacity-80 z-50 flex flex-col items-center justify-center gap-6">
+          <div className="bg-white rounded-xl shadow-lg p-8 flex flex-col items-center gap-4">
+            <span className="text-lg font-bold text-green-700">
+              {winner === socket?.id
+                ? "Félicitations, vous êtes le vainqueur !"
+                : `Partie terminée. Le vainqueur est : ${winner.slice(0, 5)}`}
+            </span>
+            <Button onClick={() => window.location.reload()} className="bg-davysGrey text-white">Nouvelle partie</Button>
+          </div>
+        </div>
+      )}
+      <div className="flex flex-row gap-8 items-start justify-center">
+        <Board currentBoard={board} penaltyFlash={penaltyFlash} />
+        <NextPieces nextBlocks={nextBlocksPreview} />
+      </div>
+      {/* Affichage des spectres adverses */}
+      <div className="mt-4">
+        <OpponentSpectres opponentSpectres={opponentSpectres} />
+      </div>
       <div className="controls">
         <Button onClick={handleStartGame} disabled={isPlaying}>
           {currentRoom ? "Start Multiplayer" : "Start Singleplayer"}
@@ -138,4 +183,10 @@ function App() {
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <SocketProvider>
+      <AppContent />
+    </SocketProvider>
+  );
+}

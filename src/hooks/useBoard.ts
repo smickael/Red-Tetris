@@ -1,105 +1,13 @@
-import { Dispatch, useReducer } from "react";
-import {
-  Block,
-  BlockShape,
-  BoardShape,
-  CellEmpty,
-  SHAPES,
-} from "../utils/types";
-
-// Board dimensions
-export const WIDTH = 10;
-export const HEIGHT = 20;
-
-export type BoardState = {
-  board: BoardShape;
-  dropRow: number;
-  dropCol: number;
-  dropBlock: Block;
-  dropShape: BlockShape;
-};
-
-export type Action = {
-  type: "start" | "move" | "drop" | "commit" | "rotate" | "hardDrop";
-  newBoard?: BoardShape;
-  newBlock?: Block;
-  direction?: number;
-  newShape?: BlockShape;
-  row?: number;
-};
-
-/**
- * Creates an empty game board with the specified HEIGT and WIDTH.
- * Each cell is initialized with the Empty value from the CellEmpty enum.
- */
-export function getEmptyBoard(height = HEIGHT): BoardShape {
-  return Array(height)
-    .fill(null)
-    .map(() => Array(WIDTH).fill(CellEmpty.Empty));
-}
-
-/**
- * Reducer function that handles all board state transitions.
- * Takes the current state and an action, returns the new state.
- */
-function boardReducer(state: BoardState, action: Action): BoardState {
-  const _state = { ...state };
-
-  switch (action.type) {
-    case "start": {
-      return {
-        board: getEmptyBoard(),
-        dropRow: 0,
-        dropCol: 3,
-        dropBlock: action.newBlock || Block.I,
-        dropShape: SHAPES[action.newBlock || Block.I].shape,
-      };
-    }
-    case "move":
-      if (action.direction !== undefined) {
-        _state.dropCol += action.direction;
-      }
-      break;
-    case "drop":
-      _state.dropRow++;
-      break;
-    case "rotate":
-      if (action.newShape) {
-        _state.dropShape = action.newShape;
-      }
-      break;
-    case "hardDrop":
-      if (action.row !== undefined) {
-        _state.dropRow = action.row;
-      }
-      break;
-    case "commit": {
-      if (!action.newBoard) {
-        throw new Error("Missing newBoard in commit action");
-      }
-
-      const nextBlock = action.newBlock || Block.I;
-      return {
-        board: action.newBoard,
-        dropRow: 0,
-        dropCol: 3,
-        dropBlock: nextBlock,
-        dropShape: SHAPES[nextBlock].shape,
-      };
-    }
-    default: {
-      throw new Error(`Unhandled action: ${action.type as never}`);
-    }
-  }
-
-  return _state;
-}
-
+// Fin du fichier
+import { useReducer } from "react";
+import { Block, BlockShape, BoardShape, CellEmpty, SHAPES } from "../utils/types";
+import { boardReducer, getEmptyBoard, BoardState, Action } from "./boardReducer";
+export { getEmptyBoard };
 /**
  * Custom hook that manages the board state.
  * Returns the current board state and a dispatch function to update it.
  */
-export function useBoard(): [BoardState, Dispatch<Action>] {
+export function useBoard(): [BoardState, React.Dispatch<Action>] {
   const [boardState, dispatchBoardState] = useReducer(
     boardReducer,
     {
