@@ -1,7 +1,5 @@
 import { useCallback, useState, useEffect } from "react";
-
 import { checkBlockCollision, useBoard } from "./useBoard";
-import { clearFullLines, calculateScore } from "../utils/gameUtils";
 import { useRepeatingStep } from "./useRepeatingStep";
 import {
   Block,
@@ -12,16 +10,10 @@ import {
   SHAPES,
   Speed,
 } from "../utils/types";
-import { useSocket } from "./useSocket";
+import { useSocket } from "../useSocket";
 import { toast } from "sonner";
 
-
 export function useTetris() {
-  // Pour feedback visuel lors de pénalité
-  const [penaltyFlash, setPenaltyFlash] = useState(false);
-  // Stockage des spectres adverses (playerId -> tableau de hauteurs)
-  const [opponentSpectres, setOpponentSpectres] = useState<Record<string, number[]>>({});
-
   const socket = useSocket();
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState<Speed | null>(null);
@@ -31,8 +23,6 @@ export function useTetris() {
   const [roomsList, setRoomsList] = useState<Room[]>([]);
   const [currentRoom, setCurrentRoom] = useState<string | null>(null);
   const [currentRoomPlayers, setCurrentRoomPlayers] = useState<string[]>([]);
-  // Pour affichage du vainqueur
-  const [winner, setWinner] = useState<string|null>(null);
 
   const [
     { board, dropRow, dropCol, dropBlock, dropShape },
@@ -46,45 +36,14 @@ export function useTetris() {
       const width = gameBoard[0]?.length || 10;
       for (let i = 0; i < n; i++) {
         gameBoard.shift();
-        gameBoard.push(Array(width).fill("Garbage"));
+        gameBoard.push(Array(width).fill("Garbage" as any));
       }
     },
     []
   );
 
   useEffect(() => {
-
-    // Réception des spectres adverses
     if (!socket) return;
-    socket.on("spectresUpdate", (spectres: Record<string, number[]>) => {
-      // On retire notre propre spectre si possible
-      if (socket && socket.id) {
-        delete spectres[socket.id];
-      }
-      setOpponentSpectres(spectres);
-    });
-
-    // Gestion du fallback offline : détection de la déconnexion socket
-    if (!socket) {
-      // Si le socket est null, on passe en mode solo local
-      if (isPlaying) {
-        toast.error("Déconnecté du serveur, passage en mode solo");
-      }
-      return;
-    }
-    // Écoute la déconnexion du socket
-    socket.on("disconnect", () => {
-      toast.error("Connexion au serveur perdue. Passage en mode solo.");
-      setCurrentRoom(null);
-      setCurrentRoomPlayers([]);
-      // On ne touche pas à isPlaying pour laisser la partie continuer en local
-    });
-
-    // Écoute la reconnexion
-    socket.on("connect", () => {
-      toast.success("Reconnexion au serveur");
-      // Optionnel : proposer de rejoindre une room ou resynchroniser
-    });
 
     const handleStartedGame = (initialBlocks: Block[]) => {
       // FIFO: first element is current block, rest is the queue
@@ -103,8 +62,7 @@ export function useTetris() {
     };
 
     const handlePieceMoved = (newBoard: BoardShape) => {
-  // Il manque newBlock ici, on va utiliser le block courant
-  dispatchBoardState({ type: "commit", newBoard, newBlock: dropBlock });
+      dispatchBoardState({ type: "commit", newBoard });
     };
 
     const handleNewBlock = (newBlock: Block) => {
@@ -151,50 +109,26 @@ export function useTetris() {
     });
 
     socket.on("addGarbage", (n: number) => {
+      // TODO: appliquer les lignes sans casser la pièce courante
+      // Pour l’instant, on notifie seulement pour éviter de désynchroniser la séquence
       toast.warning(`${n} ligne(s) de pénalité ajoutée(s)`);
-      setPenaltyFlash(true);
-      setTimeout(() => setPenaltyFlash(false), 300);
-      dispatchBoardState({ type: "addGarbage", count: n });
-    });
-
-    // Gestion de la fin de partie multi
-    socket.on("gameOver", ({ winner: winId }) => {
-      setIsPlaying(false);
-      setSpeed(null);
-      setWinner(winId || null);
-      if (winId === socket.id) {
-        toast.success("Félicitations, vous êtes le vainqueur !");
-      } else if (winId) {
-        toast.error("Partie terminée. Le vainqueur est : " + winId.slice(0, 5));
-      } else {
-        toast("Partie terminée. Aucun vainqueur.");
-      }
     });
 
     socket.emit("getRooms");
 
-
-
     return () => {
-      if (!socket) return;
-      socket.off("spectresUpdate");
-      socket.off("disconnect");
-      socket.off("connect");
       socket.off("gameStarted", handleStartedGame);
       socket.off("roomsList", handleRoomsList);
       socket.off("pieceMoved", handlePieceMoved);
-      socket.off("newBlock", handleNewBlock);
-      socket.off("hostChanged", handleHostChanged);
-      socket.off("notHost", handleNotHost);
-      socket.off("roomLocked");
-      socket.off("roomCreated");
-      socket.off("joinedRoom");
-      socket.off("playerJoined");
-      socket.off("playerLeft");
-      socket.off("addGarbage");
-      socket.off("gameOver");
+    socket.off("newBlock", handleNewBlock);
+  socket.off("hostChanged", handleHostChanged);
+    socket.off("notHost", handleNotHost);
+    socket.off("roomCreated");
+    socket.off("joinedRoom");
+  socket.off("playerJoined");
+  socket.off("playerLeft");
     };
-  }, [socket, dispatchBoardState, currentRoom, board, addGarbageLines, dropBlock, isPlaying]);
+  }, [socket, dispatchBoardState, currentRoom, board, addGarbageLines, dropBlock]);
 
   const createRoom = useCallback(
     (roomName: string) => {
@@ -258,23 +192,55 @@ export function useTetris() {
     setIsPlaying(false);
     setSpeed(null);
     console.log("Game over. Score:", score);
-    // Si on est en multi, signaler la défaite au serveur
-    if (socket && currentRoom) {
-      socket.emit("playerLost");
-    }
-  }, [score, socket, currentRoom]);
+  }, [score]);
 
   /**
    * Checks if the board has any full lines and clears them
    * Returns the number of lines cleared for the score
    */
-  // clearFullLines déplacé dans utils/gameUtils.ts
+  const clearFullLines = useCallback((gameBoard: BoardShape) => {
+    let linesCleared = 0;
+
+    for (let row = gameBoard.length - 1; row >= 0; row--) {
+      const isFull = gameBoard[row].every((cell) => cell !== CellEmpty.Empty);
+
+      if (isFull) {
+        linesCleared++;
+
+        //Move all rows above one row down
+        for (let y = row; y > 0; y--) {
+          gameBoard[y] = [...gameBoard[y - 1]];
+        }
+
+        // Empty the top row
+        gameBoard[0] = Array(gameBoard[0].length).fill(CellEmpty.Empty);
+
+        // Check the same row again
+        row++;
+      }
+    }
+
+    return linesCleared;
+  }, []);
 
   /**
    * Calculates the score based on the number of lines cleared
    * and updates the score state
    */
-  // calculateScore déplacé dans utils/gameUtils.ts
+  const calculateScore = useCallback((linesCleared: number): number => {
+    switch (linesCleared) {
+      case 1:
+        return 100;
+      case 2:
+        return 300;
+      case 3:
+        return 500;
+      case 4:
+        return 800;
+      default:
+        return 0;
+    }
+  }, []);
 
   /**
    * Checks if the game is over by checking if a new block
@@ -301,52 +267,31 @@ export function useTetris() {
       socket?.emit("linesCleared", linesCleared);
     }
 
-    // Gestion de la séquence de blocks :
-    const upcomingBlocks = structuredClone(nextBlocks);
-    let newBlock: Block | undefined = undefined;
+  const upcomingBlocks = structuredClone(nextBlocks);
+  const newBlock = upcomingBlocks.shift();
 
-    // Toujours maintenir au moins 3 blocks d'avance
-    if (socket) {
-      // Si la file d'attente passe sous 3, demander un nouveau block
-      while (upcomingBlocks.length < 3) {
+    if (upcomingBlocks.length < 3) {
+      if (socket) {
         socket.emit("requestNewBlock");
-        // On attend l'arrivée du block via l'event "newBlock"
-        // On ne pop pas ici, on attend la mise à jour du state via handleNewBlock
-        // Mais on continue la boucle pour garantir 3 blocks d'avance
-        // (si le serveur ne gère qu'un à la fois, ce sera asynchrone, c'est ok)
-        // On ne bloque pas la suite
-        break; // On ne spamme pas, on laisse le serveur répondre
-      }
-      if (upcomingBlocks.length < 1) {
-        setSpeed(Speed.Normal);
-        setIsCommit(false);
-        return;
       } else {
-        newBlock = upcomingBlocks.shift();
-      }
-    } else {
-      // Mode solo/offline : génération locale
-      while (upcomingBlocks.length < 3) {
+        // Offline/solo: generate a local random block and append
         const blocks = Object.values(Block) as Block[];
         const localNew = blocks[Math.floor(Math.random() * blocks.length)];
         upcomingBlocks.push(localNew);
       }
-      newBlock = upcomingBlocks.shift();
     }
 
-    setSpeed(Speed.Normal);
-    setNextBlocks(upcomingBlocks);
+  setSpeed(Speed.Normal);
+  setNextBlocks(upcomingBlocks);
 
-    if (!newBlock) {
-      // Sécurité : on ne peut pas continuer sans block
-      toast.error("Erreur de synchronisation des blocks (désync)");
-      setIsPlaying(false);
-      setSpeed(null);
-      setWinner(null);
-      return;
+    let nextBlockToUse = newBlock as Block | undefined;
+    if (!nextBlockToUse) {
+      // If queue was empty, try to get one now (socket will arrive async), else local random
+      const blocks = Object.values(Block) as Block[];
+      nextBlockToUse = blocks[Math.floor(Math.random() * blocks.length)];
     }
 
-    if (checkGameOver(newBlock, SHAPES[newBlock].shape)) {
+    if (checkGameOver(nextBlockToUse, SHAPES[nextBlockToUse].shape)) {
       endGame();
       return;
     }
@@ -354,25 +299,10 @@ export function useTetris() {
     dispatchBoardState({
       type: "commit",
       newBoard,
-      newBlock: newBlock,
+  newBlock: nextBlockToUse,
     });
 
     setIsCommit(false);
-
-    // Envoi du spectre au serveur (pour le rendu en temps réel des adversaires)
-    if (socket && currentRoom) {
-      // Calcul du spectre : hauteur de chaque colonne
-      const heights = Array(newBoard[0].length).fill(0);
-      for (let col = 0; col < newBoard[0].length; col++) {
-        for (let row = 0; row < newBoard.length; row++) {
-          if (newBoard[row][col] !== CellEmpty.Empty) {
-            heights[col] = newBoard.length - row;
-            break;
-          }
-        }
-      }
-      socket.emit("updateSpectre", heights);
-    }
   }, [
     board,
     dropShape,
@@ -381,10 +311,11 @@ export function useTetris() {
     dropBlock,
     dispatchBoardState,
     nextBlocks,
+    clearFullLines,
+    calculateScore,
     endGame,
     checkGameOver,
     socket,
-    currentRoom,
   ]);
 
   /**
@@ -687,40 +618,6 @@ export function useTetris() {
     setShapeOnBoard(renderBoard, dropBlock, dropShape, dropRow, dropCol);
   }
 
-  // Gestion de la reconnexion socket (doit être placée juste avant le return)
-  useEffect(() => {
-    if (!socket || !currentRoom) return;
-    // Si le socket se reconnecte, on tente de resynchroniser la séquence
-    socket.emit("reconnectToRoom");
-
-  type ReconnectPayload = { nextBlocks: Block[]; board?: BoardShape; score?: number; spectre?: number[] };
-  const handleReconnected = (payload: ReconnectPayload) => {
-      if (!payload || !payload.nextBlocks || payload.nextBlocks.length < 1) {
-        toast.error("Erreur de reconnexion : séquence invalide");
-        return;
-      }
-      const [first, ...rest] = payload.nextBlocks;
-      setNextBlocks(rest);
-      setIsPlaying(true);
-      setSpeed(Speed.Normal);
-      setScore(payload.score || 0);
-      toast.success("Reconnexion réussie, partie reprise");
-      if (payload.board) {
-        dispatchBoardState({ type: "commit", newBoard: payload.board, newBlock: first });
-      } else {
-        dispatchBoardState({ type: "start", newBlock: first });
-      }
-    };
-    socket.on("reconnected", handleReconnected);
-    socket.on("reconnectFailed", (msg: string) => {
-      toast.error(msg || "Impossible de se reconnecter à la partie");
-    });
-    return () => {
-      socket.off("reconnected", handleReconnected);
-      socket.off("reconnectFailed");
-    };
-  }, [socket, currentRoom, dispatchBoardState]);
-
   return {
     board: renderBoard,
     isPlaying,
@@ -728,16 +625,12 @@ export function useTetris() {
     endGame,
     score,
     nextBlock: nextBlocks.length > 0 ? nextBlocks[0] : null,
-    nextBlocksPreview: nextBlocks.slice(0, 3),
     createRoom,
     roomsList,
     joinRoom,
-    leaveRoom,
+  leaveRoom,
     socket,
     currentRoom,
-    currentRoomPlayers,
-    opponentSpectres,
-  penaltyFlash,
-  winner,
+  currentRoomPlayers,
   };
 }

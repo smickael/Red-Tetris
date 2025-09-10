@@ -24,17 +24,6 @@ export type ExtendedCellOptions = CellOptions | SpecialCell;
 
 export type BoardShape = ExtendedCellOptions[][];
 
-
-export const BLOCK_COLORS: Record<Block, string> = {
-  I: "#00f0f0",
-  J: "#0000f0",
-  L: "#f0a000",
-  O: "#f0f000",
-  S: "#00f000",
-  T: "#a000f0",
-  Z: "#f00000",
-};
-
 type ShapesType = {
   [key in Block]: {
     shape: BlockShape;
