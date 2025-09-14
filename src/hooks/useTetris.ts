@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 
 import { checkBlockCollision, useBoard } from "./useBoard";
 import { clearFullLines, calculateScore } from "../utils/gameUtils";
@@ -24,15 +24,41 @@ export function useTetris() {
 
   const socket = useSocket();
   const [isPlaying, setIsPlaying] = useState(false);
+  // Indique si la partie actuelle est en mode solo local (pas de serveur)
+  const [isSolo, setIsSolo] = useState(false);
   const [speed, setSpeed] = useState<Speed | null>(null);
   const [isCommit, setIsCommit] = useState(false);
   const [nextBlocks, setNextBlocks] = useState<Block[]>([]);
+  // Pour le mode solo : gestion d'un sac (7-bag) afin d'avoir une distribution équitable
+  const soloBagRef = useRef<Block[]>([]);
+
+  const refillSoloBag = useCallback(() => {
+    // Génère un 7-bag mélangé
+    const bag = Object.values(Block) as Block[];
+    for (let i = bag.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [bag[i], bag[j]] = [bag[j], bag[i]];
+    }
+    soloBagRef.current.push(...bag);
+  }, []);
+
+  const getNextSoloBlock = useCallback((): Block => {
+    if (soloBagRef.current.length === 0) refillSoloBag();
+    const b = soloBagRef.current.shift();
+    if (!b) {
+      // Sécurité extrême
+      refillSoloBag();
+      return soloBagRef.current.shift() as Block;
+    }
+    return b;
+  }, [refillSoloBag]);
   const [score, setScore] = useState(0);
   const [roomsList, setRoomsList] = useState<Room[]>([]);
   const [currentRoom, setCurrentRoom] = useState<string | null>(null);
   const [currentRoomPlayers, setCurrentRoomPlayers] = useState<string[]>([]);
+  const [currentRoomHost, setCurrentRoomHost] = useState<string | null>(null);
   // Pour affichage du vainqueur
-  const [winner, setWinner] = useState<string|null>(null);
+  const [winner, setWinner] = useState<string | null>(null);
 
   const [
     { board, dropRow, dropCol, dropBlock, dropShape },
@@ -97,14 +123,14 @@ export function useTetris() {
       dispatchBoardState({ type: "start", newBlock: first });
     };
 
-  const handleRoomsList = (rooms: string) => {
+    const handleRoomsList = (rooms: string) => {
       console.log("Received rooms list:", rooms);
       setRoomsList(JSON.parse(rooms));
     };
 
     const handlePieceMoved = (newBoard: BoardShape) => {
-  // Il manque newBlock ici, on va utiliser le block courant
-  dispatchBoardState({ type: "commit", newBoard, newBlock: dropBlock });
+      // Il manque newBlock ici, on va utiliser le block courant
+      dispatchBoardState({ type: "commit", newBoard, newBlock: dropBlock });
     };
 
     const handleNewBlock = (newBlock: Block) => {
@@ -118,6 +144,7 @@ export function useTetris() {
       if (currentRoom && currentRoom !== roomId) {
         setCurrentRoom(roomId);
       }
+      setCurrentRoomHost(newHostId);
     };
 
     const handleNotHost = () => {
@@ -130,16 +157,18 @@ export function useTetris() {
     socket.on("newBlock", handleNewBlock);
     socket.on("hostChanged", handleHostChanged);
     socket.on("notHost", handleNotHost);
-  socket.on("roomLocked", () => toast.error("Partie déjà en cours"));
+    socket.on("roomLocked", () => toast.error("Partie déjà en cours"));
     socket.on("roomCreated", (room: Room) => {
       toast.success(`Room "${room.roomName}" créée`);
       setCurrentRoom(room.id);
       setCurrentRoomPlayers(room.players || []);
+      setCurrentRoomHost(room.host || socket.id || null);
     });
     socket.on("joinedRoom", (room: Room) => {
       toast.success(`Rejoint la room "${room.roomName}"`);
       setCurrentRoom(room.id);
       setCurrentRoomPlayers(room.players || []);
+      setCurrentRoomHost(room.host || null);
     });
     socket.on("playerJoined", (playerId: string) => {
       setCurrentRoomPlayers((p) => Array.from(new Set([...(p || []), playerId])));
@@ -221,6 +250,7 @@ export function useTetris() {
     socket.emit("leaveRoom", currentRoom);
     setCurrentRoom(null);
     setCurrentRoomPlayers([]);
+    setCurrentRoomHost(null);
     toast("Vous avez quitté la room");
   }, [socket, currentRoom]);
 
@@ -228,28 +258,34 @@ export function useTetris() {
    * Start a new game by setting up the first blocks
    * and starting the game loop
    */
+  const startSoloGame = useCallback(() => {
+    setIsSolo(true);
+    setScore(0);
+    setWinner(null);
+    soloBagRef.current = [];
+    // Réinitialisations d'état spécifiques
+    setIsCommit(false); // éviter commit immédiat si ancienne partie finissait en phase de slide
+    setPenaltyFlash(false);
+    // Pré-charger 3 blocks d'avance pour cohérence avec logique commit
+    const first = getNextSoloBlock();
+    const queue: Block[] = [getNextSoloBlock(), getNextSoloBlock(), getNextSoloBlock()];
+    setNextBlocks(queue);
+    setIsPlaying(true);
+    setSpeed(Speed.Normal);
+    toast.success("Solo: la partie démarre");
+    dispatchBoardState({ type: "start", newBlock: first });
+  }, [dispatchBoardState, getNextSoloBlock]);
+
   const startGame = useCallback(() => {
     if (!socket) {
-      // Mode solo sans socket (fallback) – generate random pieces locally
-      const blocks = Object.values(Block) as Block[];
-      const rand = () => blocks[Math.floor(Math.random() * blocks.length)];
-      const initialBlocks: Block[] = [rand(), rand(), rand()];
-      const [first, ...rest] = initialBlocks;
-      setNextBlocks(rest);
-      setIsPlaying(true);
-      setSpeed(Speed.Normal);
-      setScore(0);
-      toast.success("La partie démarre");
-      dispatchBoardState({ type: "start", newBlock: first });
+      // Pas de socket -> lancer directement le mode solo
+      startSoloGame();
       return;
     }
-
-    // Avec socket (mode solo ou multi)
+    setIsSolo(false);
     socket.emit("startGame");
-
-    // Reset some states while waiting for server response
     setSpeed(null);
-  }, [socket, dispatchBoardState]);
+  }, [socket, startSoloGame]);
 
   /**
    * Ends the current game when it's game over
@@ -306,30 +342,22 @@ export function useTetris() {
     let newBlock: Block | undefined = undefined;
 
     // Toujours maintenir au moins 3 blocks d'avance
-    if (socket) {
-      // Si la file d'attente passe sous 3, demander un nouveau block
+    if (!socket || isSolo) {
+      // Mode solo : on garantit 3 blocks d'avance via 7-bag
+      while (upcomingBlocks.length < 3) {
+        upcomingBlocks.push(getNextSoloBlock());
+      }
+      newBlock = upcomingBlocks.shift();
+    } else {
+      // Mode multi avec serveur
       while (upcomingBlocks.length < 3) {
         socket.emit("requestNewBlock");
-        // On attend l'arrivée du block via l'event "newBlock"
-        // On ne pop pas ici, on attend la mise à jour du state via handleNewBlock
-        // Mais on continue la boucle pour garantir 3 blocks d'avance
-        // (si le serveur ne gère qu'un à la fois, ce sera asynchrone, c'est ok)
-        // On ne bloque pas la suite
-        break; // On ne spamme pas, on laisse le serveur répondre
+        break; // éviter spam
       }
       if (upcomingBlocks.length < 1) {
         setSpeed(Speed.Normal);
         setIsCommit(false);
         return;
-      } else {
-        newBlock = upcomingBlocks.shift();
-      }
-    } else {
-      // Mode solo/offline : génération locale
-      while (upcomingBlocks.length < 3) {
-        const blocks = Object.values(Block) as Block[];
-        const localNew = blocks[Math.floor(Math.random() * blocks.length)];
-        upcomingBlocks.push(localNew);
       }
       newBlock = upcomingBlocks.shift();
     }
@@ -360,7 +388,7 @@ export function useTetris() {
     setIsCommit(false);
 
     // Envoi du spectre au serveur (pour le rendu en temps réel des adversaires)
-    if (socket && currentRoom) {
+    if (!isSolo && socket && currentRoom) {
       // Calcul du spectre : hauteur de chaque colonne
       const heights = Array(newBoard[0].length).fill(0);
       for (let col = 0; col < newBoard[0].length; col++) {
@@ -474,7 +502,7 @@ export function useTetris() {
    * Checks for collisions to prevent moving the block off the board
    */
   const moveLeft = useCallback(() => {
-  if (!isPlaying || isCommit) return;
+    if (!isPlaying || isCommit) return;
 
     const willCollide = checkBlockCollision(
       board,
@@ -503,7 +531,7 @@ export function useTetris() {
    * Checks for collisions to prevent moving the block off the board
    */
   const moveRight = useCallback(() => {
-  if (!isPlaying || isCommit) return;
+    if (!isPlaying || isCommit) return;
 
     const willCollide = checkBlockCollision(
       board,
@@ -532,7 +560,7 @@ export function useTetris() {
    * Checks for collisions to prevent rotating the block off the board
    */
   const rotate = useCallback(() => {
-  if (!isPlaying || isCommit || !dropShape) return;
+    if (!isPlaying || isCommit || !dropShape) return;
 
     const rows = dropShape.length;
     const cols = dropShape[0].length;
@@ -594,7 +622,7 @@ export function useTetris() {
    * possible position and commits it.
    */
   const hardDrop = useCallback(() => {
-  if (!isPlaying || isCommit) return;
+    if (!isPlaying || isCommit) return;
 
     let newRow = dropRow;
     let willCollide = false;
@@ -606,7 +634,7 @@ export function useTetris() {
 
     dispatchBoardState({ type: "hardDrop", row: newRow - 1 });
     setIsCommit(true);
-  socket?.emit("dropPiece");
+    socket?.emit("dropPiece");
   }, [
     board,
     dropShape,
@@ -615,7 +643,7 @@ export function useTetris() {
     dispatchBoardState,
     isPlaying,
     isCommit,
-  socket,
+    socket,
   ]);
 
   /**
@@ -693,8 +721,8 @@ export function useTetris() {
     // Si le socket se reconnecte, on tente de resynchroniser la séquence
     socket.emit("reconnectToRoom");
 
-  type ReconnectPayload = { nextBlocks: Block[]; board?: BoardShape; score?: number; spectre?: number[] };
-  const handleReconnected = (payload: ReconnectPayload) => {
+    type ReconnectPayload = { nextBlocks: Block[]; board?: BoardShape; score?: number; spectre?: number[] };
+    const handleReconnected = (payload: ReconnectPayload) => {
       if (!payload || !payload.nextBlocks || payload.nextBlocks.length < 1) {
         toast.error("Erreur de reconnexion : séquence invalide");
         return;
@@ -725,6 +753,7 @@ export function useTetris() {
     board: renderBoard,
     isPlaying,
     startGame,
+    startSoloGame,
     endGame,
     score,
     nextBlock: nextBlocks.length > 0 ? nextBlocks[0] : null,
@@ -736,8 +765,10 @@ export function useTetris() {
     socket,
     currentRoom,
     currentRoomPlayers,
+    currentRoomHost,
     opponentSpectres,
-  penaltyFlash,
-  winner,
+    penaltyFlash,
+    winner,
+    isSolo,
   };
 }

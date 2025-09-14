@@ -15,7 +15,9 @@ function AppContent() {
   const {
     board,
     startGame,
+    startSoloGame,
     isPlaying,
+    endGame,
     createRoom,
     roomsList,
     joinRoom,
@@ -23,10 +25,13 @@ function AppContent() {
     currentRoom,
     socket,
     currentRoomPlayers,
+    currentRoomHost,
     opponentSpectres,
     nextBlocksPreview,
-  penaltyFlash,
+    penaltyFlash,
     winner,
+    isSolo,
+    score,
   } = useTetris();
 
   // État pour afficher le fallback offline
@@ -45,8 +50,8 @@ function AppContent() {
 
   const handleCreateRoom = (e: React.FormEvent) => {
     e.preventDefault();
-  if (!socket) return;
-  createRoom(roomName);
+    if (!socket) return;
+    createRoom(roomName);
     setRoomName("");
   };
 
@@ -82,103 +87,130 @@ function AppContent() {
           </div>
         </div>
       )}
-      {winner && (
+      {(winner || (!isPlaying && isSolo)) && (
         <div className="fixed inset-0 bg-vampireBlack bg-opacity-80 z-50 flex flex-col items-center justify-center gap-6">
           <div className="bg-white rounded-xl shadow-lg p-8 flex flex-col items-center gap-4">
-            <span className="text-lg font-bold text-green-700">
-              {winner === socket?.id
-                ? "Félicitations, vous êtes le vainqueur !"
-                : `Partie terminée. Le vainqueur est : ${winner.slice(0, 5)}`}
-            </span>
-            <Button onClick={() => window.location.reload()} className="bg-davysGrey text-white">Nouvelle partie</Button>
+            {winner && (
+              <span className="text-lg font-bold text-green-700">
+                {winner === socket?.id
+                  ? "Félicitations, vous êtes le vainqueur !"
+                  : `Partie terminée. Le vainqueur est : ${winner.slice(0, 5)}`}
+              </span>
+            )}
+            {!winner && isSolo && (
+              <span className="text-lg font-bold text-davysGrey">
+                Partie terminée (Solo)
+              </span>
+            )}
+            <span className="text-davysGrey">Score final : {score}</span>
+            <div className="flex gap-2">
+              <Button onClick={() => window.location.reload()} className="bg-davysGrey text-white">Nouvelle partie</Button>
+              {isSolo && (
+                <Button onClick={() => startSoloGame()} variant="outline">Rejouer Solo</Button>
+              )}
+            </div>
           </div>
         </div>
       )}
       <div className="flex flex-row gap-8 items-start justify-center">
-        <Board currentBoard={board} penaltyFlash={penaltyFlash} />
-        <NextPieces nextBlocks={nextBlocksPreview} />
-      </div>
-      {/* Affichage des spectres adverses */}
-      <div className="mt-4">
         <OpponentSpectres opponentSpectres={opponentSpectres} />
-      </div>
-      <div className="controls">
-        <Button onClick={handleStartGame} disabled={isPlaying}>
-          {currentRoom ? "Start Multiplayer" : "Start Singleplayer"}
-        </Button>
-      </div>
-
-  {/* Search input for rooms */}
-  {!currentRoom && (
-        <>
-          <div className="mb-4">
-            <Input
-              label="Search rooms"
-              variant="outline"
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Type to search rooms..."
-            />
-          </div>
-
-          <div className="space-y-2">
-            <p>Available rooms:</p>
-            {filteredRooms.length > 0 ? (
-        filteredRooms.map((room) => (
-                <Button
-                  key={room.id}
-                  onClick={() => socket && joinRoom(room)}
-                  disabled={!socket}
-                  showPing={room.id === socket?.id}
-                  className="relative"
-                >
-                  {highlightMatch(room.roomName, searchQuery)}
+        <div className="flex flex-col gap-4">
+          <Board currentBoard={board} penaltyFlash={penaltyFlash} />
+          <div className="flex flex-col">
+            <div className="controls flex gap-2 mt-4">
+              {!isPlaying && currentRoom && currentRoomHost === socket?.id && (
+                <Button onClick={handleStartGame}>
+                  Start Multiplayer
                 </Button>
-              ))
-            ) : (
-              <p className="text-davysGrey">
-                No rooms found matching your search
-              </p>
+              )}
+              {!isPlaying && !currentRoom && (
+                <Button onClick={startSoloGame} variant="outline">
+                  Solo Offline
+                </Button>
+              )}
+              {isPlaying && (
+                <Button onClick={endGame} className="bg-red-600 hover:bg-red-700 text-white">
+                  Quitter la partie
+                </Button>
+              )}
+            </div>
+
+            {/* Search input for rooms */}
+            {!currentRoom && (
+              <>
+                <div className="mb-4">
+                  <Input
+                    label="Search rooms"
+                    variant="outline"
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Type to search rooms..."
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <p>Available rooms:</p>
+                  {filteredRooms.length > 0 ? (
+                    filteredRooms.map((room) => (
+                      <Button
+                        key={room.id}
+                        onClick={() => socket && joinRoom(room)}
+                        disabled={!socket}
+                        showPing={room.id === socket?.id}
+                        className="relative"
+                      >
+                        {highlightMatch(room.roomName, searchQuery)}
+                      </Button>
+                    ))
+                  ) : (
+                    <p className="text-davysGrey">
+                      No rooms found matching your search
+                    </p>
+                  )}
+                </div>
+
+                <form
+                  onSubmit={handleCreateRoom}
+                  className="flex w-full justify-between items-end gap-2 mt-4"
+                >
+                  <Input
+                    label="Create a room"
+                    variant="primary"
+                    type="text"
+                    name="room"
+                    value={roomName}
+                    onChange={(e) => setRoomName(e.target.value)}
+                    placeholder="Enter room name"
+                  />
+                  <Button type="submit" className="w-1/2">
+                    Create room
+                  </Button>
+                </form>
+              </>
+            )}
+
+            {currentRoom && (
+              <div className="mt-4 flex flex-col gap-2 items-center">
+                <div className="text-davysGrey">Room: {currentRoom}</div>
+                <div className="text-davysGrey">
+                  Players ({currentRoomPlayers?.length || 0}):
+                  {" "}
+                  {currentRoomPlayers?.map((id) => id.slice(0, 5)).join(", ")}
+                </div>
+                <Button
+                  onClick={leaveRoom}
+                  variant="outline"
+                >
+                  Leave room
+                </Button>
+              </div>
             )}
           </div>
-
-          <form
-            onSubmit={handleCreateRoom}
-            className="flex w-full justify-between items-end gap-2 mt-4"
-          >
-            <Input
-              label="Create a room"
-              variant="primary"
-              type="text"
-              name="room"
-              value={roomName}
-              onChange={(e) => setRoomName(e.target.value)}
-              placeholder="Enter room name"
-            />
-            <Button type="submit" className="w-1/2">
-              Create room
-            </Button>
-          </form>
-        </>
-      )}
-
-      {currentRoom && (
-        <div className="mt-4 flex flex-col gap-2 items-center">
-          <div className="text-davysGrey">Room: {currentRoom}</div>
-          <div className="text-davysGrey">
-            Players ({currentRoomPlayers?.length || 0}):
-            {" "}
-            {currentRoomPlayers?.map((id) => id.slice(0, 5)).join(", ")}
-          </div>
-          <Button
-            onClick={leaveRoom}
-            variant="outline"
-          >
-            Leave room
-          </Button>
         </div>
-      )}
+        <NextPieces nextBlocks={nextBlocksPreview} />
+      </div>
+
     </>
   );
 }
